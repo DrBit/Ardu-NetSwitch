@@ -1,5 +1,8 @@
-// Doorman arduino by Doctor Bit Projects
-// More info at: http://blog.drbit.nl
+// Arduino Net-remote-switch by Doctor Bit Labs
+// Version: V0.2
+// Added toggle function (instead of timed)
+// Added colors to buttons in order to clearly see which channels are ON and which ones OFF
+// More info at: http://www.drbit.nl
 
 #include <Wire.h>
 #include <SPI.h>
@@ -8,11 +11,9 @@
 
 // Outputs
 int statusLed = 9;              // ~ LED Green - Power
-
-const int temperature_pin = 0;
-const int ldr_pin = 1;
-
-unsigned int seed = 0;
+const int temperature_pin = 0;  // Sensing temperature
+const int ldr_pin = 1;          // For sensing light
+unsigned int seed = 0;          // Generating seed for avoinding double triggers
 
 // Misc
 bool isConnectedToLAN = false;
@@ -41,6 +42,7 @@ bool buttonIsActive = false;
 // Button string and button description MUST NOT be the same. If strings are equal or contain in themselves an error will triger
 char* buttonStrings[]=    {"ch1"  , "ch2"     , "ch3" ,"ch4"};          // Channel names
 char* buttonDescription[]={"Light", "Sokets"  , "CNC" ,"extraCH"};      // Description
+bool buttonState [] =     {false  ,false      ,false  ,false};          // Records the state of the button. (ON/OFF)
 int pinChanels []=        {8      , 7         ,6      ,13};             // Channel pin numbers
 bool chFlag [] =          {false  ,false      ,false  ,false};          // Flag to mark which channel has ben requested by http
 const int numberOfButtons = sizeof(chFlag);                             // calculates numer of buttons to print
@@ -53,7 +55,7 @@ boolean faviconFlag = false;                                            // Speci
 void setup() {
     Serial.begin(9600);
 
-    Serial.println(F("* Starting Remote Lighs Controller V0.1 *"));
+    Serial.println(F("* Starting Remote Lighs Controller V0.2 *"));
     
     for (int i = 0; i < numberOfButtons; i++ ) pinMode(pinChanels [i], OUTPUT);     // Set all channels pins to OUTPUTS
     pinMode(statusLed, OUTPUT);
@@ -67,7 +69,6 @@ void setup() {
     }
 
     Serial.println(F("* Ready"));
-   
 }
 
 
@@ -170,8 +171,8 @@ void loop() {
         for (int i = 0; i < numberOfButtons; i++ ) {
             if (chFlag [i]) {
                 if ((seed == captured_seed) && (seed != 0)) {
-                    printHTMLbuttonAction (buttonDescription[i], "Back");
                     obre_sesam (i,3000);
+                    printHTMLbuttonAction (buttonDescription[i], "Back", buttonState[i] );
                 }else{
                     // Error at matching seed
                     // could be a refresh from the browser or 2 users connected at the same time
@@ -211,7 +212,7 @@ void loop() {
             // Print all buttons names and descriptions
             const int nButtons = 4;
             for (int i = 0; i < nButtons; i++){
-                printHTMLbutton (buttonStrings[i],buttonDescription[i]);
+                printHTMLbutton (buttonStrings[i],buttonDescription[i],buttonState[i]);
             }
         }
 
@@ -220,7 +221,10 @@ void loop() {
         Serial.println(F("Close Connection"));
         Serial.println(F("*****\n"));
 
-    }else check_timings (); // Check timings and see if we have to switch of a previously opened door
+    }else{
+        // Enable this is you want the buttons to be timed
+        //check_timings (); // Check timings and see if we have to switch of a previously opened door
+    }
 }
 
 void printOpenDebug (int num) {
@@ -230,11 +234,12 @@ void printOpenDebug (int num) {
 }
 
 void obre_sesam (int porta, int temps) {
+    buttonState [porta] = !buttonState [porta];        // Toggles between states
     portaP_start_open[porta] = millis();
     portaP_time_delay[porta] = temps;
-    digitalWrite (porta, HIGH);
-    Serial.print (F("Open: "));
-    Serial.print (porta);
+    digitalWrite (pinChanels [porta], !digitalRead(pinChanels [porta]));    // Toggle port
+    Serial.print (F("Toggle pin: "));
+    Serial.print (pinChanels [porta]);
     Serial.print (F(" - Time: "));
     Serial.println (temps);
 }
@@ -255,7 +260,7 @@ void check_timings () {
     }
 }
 
-void printHTMLbutton (char* buttoncall, char* buttontext) {
+void printHTMLbutton (char* buttoncall, char* buttontext, boolean Open) {
 
     client.println(F("<BR>"));
     
@@ -270,18 +275,34 @@ void printHTMLbutton (char* buttoncall, char* buttontext) {
     client.println(F(" method=get >"));
 
     client.print(F("<INPUT TYPE=SUBMIT NAME=\"submit\" VALUE=\""));
+    if (!Open) {
+        client.print(F("Open "));
+    }else{
+        client.print(F("Colse "));
+    }
     client.print(buttontext);
-    client.println(F("\" onClick=\"return confirm(\'Are you sure?\')\" style=\"height:150px;width:400px;font-size:30px;font-weight:bold;\">"));
+    client.println(F("\" onClick=\"return confirm(\'Are you sure?\')\" style=\"height:150px;width:400px;font-size:30px;font-weight:bold;background-color:"));
+    //background-color:lightgreen
+    //color:red
+    if (!Open) {
+        client.print(F("Green"));
+    }else{
+        client.print(F("Red"));
+    }
+
+
+
+    client.println(F("\">"));
     
     client.print(F("<INPUT TYPE=\"HIDDEN\" name=\"seed\" value=\""));
-    client.print(seed);
+    client.print(seed);   
     client.println(F("\">"));
             
     client.println(F("</FORM>"));
     client.println(F("</CENTER>"));
 }
 
-void printHTMLbuttonAction (char* accio, char* returntext) {
+void printHTMLbuttonAction (char* accio, char* returntext, boolean Open) {
     
     client.println(F("<HEAD>"));            
     client.print(F("<META http-equiv=\"refresh\" content=\"3; url=http://"));
@@ -290,14 +311,20 @@ void printHTMLbuttonAction (char* accio, char* returntext) {
     client.println(F("</HEAD>"));
     
     client.println(F("<CENTER><BR><font size=\"30\">"));
-    client.println(F("FET!"));
+    
     client.println(F("<BR>"));
+    if (Open) {
+        client.println(F("Open "));         // Wen button is on we are opening
+    }else{
+        client.println(F("Close "));
+    }
     client.println(accio);
+    client.println(F(", Done!"));
     client.println(F("</font><BR>"));
     client.println(F("<BR>"));
     
     client.println(F("<BR>"));
-    client.println(F("Press back if you are not returned to main page automatically"));
+    client.println(F("Press back if you are not automatically returned to the main site"));
     client.println(F("<BR>"));
     client.print(F("seed: "));
     client.println(seed);
