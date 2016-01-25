@@ -4,6 +4,11 @@
 // Added colors to buttons in order to clearly see which channels are ON and which ones OFF
 // More info at: http://www.drbit.nl
 
+// Todo:
+// Show temperature and light sensors data
+// Add setup button for changing ip and other configurations
+// Build all functions to access EPROM
+
 #include <Wire.h>
 #include <SPI.h>
 #include <Ethernet.h>
@@ -40,22 +45,24 @@ bool buttonIsActive = false;
 
 // When adding more channels always update the 3 next parameters.
 // Button string and button description MUST NOT be the same. If strings are equal or contain in themselves an error will triger
-char* buttonStrings[]=    {"ch1"  , "ch2"     , "ch3" ,"ch4"};          // Channel names
-char* buttonDescription[]={"Light", "Sokets"  , "CNC" ,"extraCH"};      // Description
-bool buttonState [] =     {false  ,false      ,false  ,false};          // Records the state of the button. (ON/OFF)
-int pinChanels []=        {8      , 7         ,6      ,13};             // Channel pin numbers
-bool chFlag [] =          {false  ,false      ,false  ,false};          // Flag to mark which channel has ben requested by http
-const int numberOfButtons = sizeof(chFlag);                             // calculates numer of buttons to print
-unsigned long portaP_start_open[numberOfButtons] = {};                  // time mark when swithc is activated
-unsigned long portaP_time_delay[numberOfButtons] = {};                  // time delay custom set
+char* buttonStrings[]=    {"ch1"  ,"ch2"     ,"ch3"  ,"ch4"};          // Channel names
+char* buttonDescription[]={"Light","Sokets"  ,"CNC"  ,"extraCH"};      // Description
+int   buttonSizes []=     {50     ,50        ,50     ,50};             // Button sizes
+int buttonState [] =      {1      ,1         ,1      ,1};              // Records the state of the button. (ON/OFF)
+const int pinChanels []=  {8      ,7         ,6      ,13};             // Channel pin numbers
+bool chFlag [] =          {false  ,false     ,false  ,false};          // Flag to mark which channel has ben requested by http
+const int numberOfButtons = sizeof(chFlag);                            // calculates numer of buttons to print
+unsigned long portaP_start_open[numberOfButtons] = {};                 // time mark when swithc is activated
+unsigned long portaP_time_delay[numberOfButtons] = {};                 // time delay custom set
 
-boolean faviconFlag = false;                                            // Special favicon flags
+boolean faviconFlag = false;                                           // Special favicon flags
+boolean configPressed = false;                                         // Special settings flag
 
 
 void setup() {
     Serial.begin(9600);
 
-    Serial.println(F("* Starting Remote Lighs Controller V0.2 *"));
+    Serial.println(F("* Starting Remote Lighs Controller V0.3 *"));
     
     for (int i = 0; i < numberOfButtons; i++ ) pinMode(pinChanels [i], OUTPUT);     // Set all channels pins to OUTPUTS
     pinMode(statusLed, OUTPUT);
@@ -136,6 +143,10 @@ void loop() {
                             continue;
                         }
                     }
+                    if (receivedData == "settings") {     // If received favicon
+                        Serial.print(F("||settings||"));
+                        configPressed = true;
+                    }
                     if (receivedData == "favicon") {     // If received favicon
                         Serial.print(F("||favicon||"));
                         faviconFlag = true;
@@ -198,6 +209,9 @@ void loop() {
                 continue;
             }
         }
+        if (configPressed) {
+
+        }
         if (!doorOpened) {          // in case no door has been open means we are generating the main page.
             if (!faviconFlag){       // (and it's not Favicon)
                 seed = random(10000);   // Creates a seed for this session
@@ -212,8 +226,9 @@ void loop() {
             // Print all buttons names and descriptions
             const int nButtons = 4;
             for (int i = 0; i < nButtons; i++){
-                printHTMLbutton (buttonStrings[i],buttonDescription[i],buttonState[i]);
+                printHTMLbutton (buttonStrings[i],buttonDescription[i],buttonState[i],buttonSizes[i]);
             }
+            printHTMLbutton ("settings","configuration",0, 40);
         }
 
         HTMLend ();
@@ -234,7 +249,8 @@ void printOpenDebug (int num) {
 }
 
 void obre_sesam (int porta, int temps) {
-    buttonState [porta] = !buttonState [porta];        // Toggles between states
+    buttonState [porta]++;
+    if (buttonState [porta] == 3) buttonState [porta] = 1;  // Toggles between states        
     portaP_start_open[porta] = millis();
     portaP_time_delay[porta] = temps;
     digitalWrite (pinChanels [porta], !digitalRead(pinChanels [porta]));    // Toggle port
@@ -260,7 +276,7 @@ void check_timings () {
     }
 }
 
-void printHTMLbutton (char* buttoncall, char* buttontext, boolean Open) {
+void printHTMLbutton (char* buttoncall, char* buttontext, int State,int buttonSize) {
 
     client.println(F("<BR>"));
     
@@ -275,34 +291,30 @@ void printHTMLbutton (char* buttoncall, char* buttontext, boolean Open) {
     client.println(F(" method=get >"));
 
     client.print(F("<INPUT TYPE=SUBMIT NAME=\"submit\" VALUE=\""));
-    if (!Open) {
-        client.print(F("Open "));
-    }else{
-        client.print(F("Colse "));
-    }
+    // Switches to states (0 empty, 1 is open, 2 is close)
+    if (State == 0) client.print(F(""));        // Empty
+    if (State == 1) client.print(F("Open "));
+    if (State == 2) client.print(F("Close "));
     client.print(buttontext);
-    client.println(F("\" onClick=\"return confirm(\'Are you sure?\')\" style=\"height:150px;width:400px;font-size:30px;font-weight:bold;background-color:"));
-    //background-color:lightgreen
-    //color:red
-    if (!Open) {
-        client.print(F("Green"));
-    }else{
-        client.print(F("Red"));
-    }
-
-
-
+    client.print(F("\" onClick=\"return confirm(\'Are you sure?\')\" style=\"height:"));
+    client.print(3*buttonSize);  // Print height (3 times size)
+    client.print(F("px;width:"));
+    client.print(8*buttonSize);// Print with (8 times size)
+    client.print(F("px;font-size:30px;font-weight:bold;background-color:")); //background-color:lightgreen - //color:red
+    if (State == 0) client.print(F(""));        // Empty
+    if (State == 1) client.print(F("Red"));
+    if (State == 2) client.print(F("Green"));
     client.println(F("\">"));
     
     client.print(F("<INPUT TYPE=\"HIDDEN\" name=\"seed\" value=\""));
     client.print(seed);   
     client.println(F("\">"));
-            
+
     client.println(F("</FORM>"));
     client.println(F("</CENTER>"));
 }
 
-void printHTMLbuttonAction (char* accio, char* returntext, boolean Open) {
+void printHTMLbuttonAction (char* accio, char* returntext, int State) {
     
     client.println(F("<HEAD>"));            
     client.print(F("<META http-equiv=\"refresh\" content=\"3; url=http://"));
@@ -313,11 +325,9 @@ void printHTMLbuttonAction (char* accio, char* returntext, boolean Open) {
     client.println(F("<CENTER><BR><font size=\"30\">"));
     
     client.println(F("<BR>"));
-    if (Open) {
-        client.println(F("Open "));         // Wen button is on we are opening
-    }else{
-        client.println(F("Close "));
-    }
+    if (State == 0) client.print(F(""));        // Empty
+    if (State == 1) client.print(F("Close "));
+    if (State == 2) client.print(F("Open "));
     client.println(accio);
     client.println(F(", Done!"));
     client.println(F("</font><BR>"));
